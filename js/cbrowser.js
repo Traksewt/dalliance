@@ -17,6 +17,7 @@ if (typeof(require) !== 'undefined') {
     var removeChildren = utils.removeChildren;
     var miniJSONify = utils.miniJSONify;
     var shallowCopy = utils.shallowCopy;
+    var textXHR = utils.textXHR;
 
     var tier = require('./tier');
     var DasTier = tier.DasTier;
@@ -36,6 +37,12 @@ if (typeof(require) !== 'undefined') {
     var Chainset = require('./chainset').Chainset;
 
     var Promise = require('es6-promise').Promise;
+
+    var sourcecompare = require('./sourcecompare');
+    var sourcesAreEqual = sourcecompare.sourcesAreEqual;
+    var sourcesAreEqualModuloStyle = sourcecompare.sourcesAreEqualModuloStyle;
+    var sourceDataURI = sourcecompare.sourceDataURI;
+    var sourceStyleURI = sourcecompare.sourceStyleURI;
 }
 
 function Region(chr, min, max) {
@@ -181,7 +188,11 @@ function Browser(opts) {
     if (document.readyState === 'complete') {
         thisB.realInit();
     } else {
-        window.addEventListener('load', function(ev) {thisB.realInit();}, false);
+        var loadListener = function(ev) {
+            window.removeEventListener('load', loadListener, false);
+            thisB.realInit();
+        }
+        window.addEventListener('load', loadListener, false);
     }
 }
 
@@ -1561,82 +1572,6 @@ Browser.prototype.addTier = function(conf) {
     return tier;
 }
 
-function sourceDataURI(conf) {
-    if (conf.uri) {
-        return conf.uri;
-    } else if (conf.blob) {
-        return 'file:' + conf.blob.name;
-    } else if (conf.bwgBlob) {
-        return 'file:' + conf.bwgBlob.name;
-    } else if (conf.bamBlob) {
-        return 'file:' + conf.bamBlob.name;
-    } else if (conf.twoBitBlob) {
-        return 'file:' + conf.twoBitBlob.name;
-    }
-
-    return conf.bwgURI || conf.bamURI || conf.jbURI || conf.twoBitURI || 'http://www.biodalliance.org/magic/no_uri';
-}
-
-function sourceStyleURI(conf) {
-    if (conf.stylesheet_uri)
-        return conf.stylesheet_uri;
-    else if (conf.tier_type == 'sequence' || conf.twoBitURI || conf.twoBitBlob)
-        return 'http://www.biodalliance.org/magic/sequence'
-    else
-        return sourceDataURI(conf);
-}
-
-function sourcesAreEqualModuloStyle(a, b) {
-    if (sourceDataURI(a) != sourceDataURI(b))
-        return false;
-
-    if (a.mapping != b.mapping)
-        return false;
-
-    if (a.tier_type != b.tier_type)
-        return false;
-
-    if (a.overlay) {
-        if (!b.overlay || b.overlay.length != a.overlay.length)
-            return false;
-        for (var oi = 0; oi < a.overlay.length; ++oi) {
-            if (!sourcesAreEqualModuloStyle(a.overlay[oi], b.overlay[oi]))
-                return false;
-        }
-    } else {
-        if (b.overlay)
-            return false;
-    }
-
-    return true;
-}
-
-function sourcesAreEqual(a, b) {
-    if (sourceDataURI(a) != sourceDataURI(b) ||
-        sourceStyleURI(a) != sourceStyleURI(b))
-        return false;
-
-    if (a.mapping != b.mapping)
-        return false;
-
-    if (a.tier_type != b.tier_type)
-        return false;
-
-    if (a.overlay) {
-        if (!b.overlay || b.overlay.length != a.overlay.length)
-            return false;
-        for (var oi = 0; oi < a.overlay.length; ++oi) {
-            if (!sourcesAreEqual(a.overlay[oi], b.overlay[oi]))
-                return false;
-        }
-    } else {
-        if (b.overlay)
-            return false;
-    }
-
-    return true;
-}
-
 Browser.prototype.removeTier = function(conf, force) {
     var target = -1;
 
@@ -1682,17 +1617,17 @@ Browser.prototype.removeTier = function(conf, force) {
 
 Browser.prototype.removeAllTiers = function() {
 	var thisB = this;
-  this.selectedTiers = [];
-  this.markSelectedTiers();
-  this.tiers.forEach(function (targetTier) {
-	  targetTier.destroy();
-	  if (thisB.knownSpace) {
-	      thisB.knownSpace.featureCache[targetTier] = null;
-	  }
-  });
-  this.tiers.length = 0;
-  this.reorderTiers();
-  this.notifyTier();
+    this.selectedTiers = [];
+    this.markSelectedTiers();
+    this.tiers.forEach(function (targetTier) {
+        targetTier.destroy();
+        if (thisB.knownSpace) {
+            thisB.knownSpace.featureCache[targetTier] = null;
+        }
+    });
+    this.tiers.length = 0;
+    this.reorderTiers();
+    this.notifyTier();
 }
 
 Browser.prototype.getSequenceSource = function() {
@@ -1890,6 +1825,13 @@ Browser.prototype.addFeatureListener = function(handler, opts) {
     this.featureListeners.push(handler);
 }
 
+Browser.prototype.removeFeatureListener = function(handler, opts) {
+    var idx = arrayIndexOf(this.featureListeners, handler);
+    if (idx >= 0) {
+        this.featureListeners.splice(idx, 1);
+    }
+}
+
 Browser.prototype.notifyFeature = function(ev, feature, hit, tier) {
   for (var fli = 0; fli < this.featureListeners.length; ++fli) {
       try {
@@ -1906,6 +1848,13 @@ Browser.prototype.addFeatureHoverListener = function(handler, opts) {
     this.featureHoverListeners.push(handler);
 }
 
+Browser.prototype.removeFeatureHoverListener = function(handler, opts) {
+    var idx = arrayIndexOf(this.featureHoverListeners, handler);
+    if (idx >= 0) {
+        this.featureHoverListeners.splice(idx, 1);
+    }
+}
+
 Browser.prototype.notifyFeatureHover = function(ev, feature, hit, tier) {
     for (var fli = 0; fli < this.featureHoverListeners.length; ++fli) {
         try {
@@ -1919,6 +1868,13 @@ Browser.prototype.notifyFeatureHover = function(ev, feature, hit, tier) {
 Browser.prototype.addViewListener = function(handler, opts) {
     opts = opts || {};
     this.viewListeners.push(handler);
+}
+
+Browser.prototype.removeViewListener = function(handler, opts) {
+    var idx = arrayIndexOf(this.viewListeners, handler);
+    if (idx >= 0) {
+        this.viewListeners.splice(idx, 1);
+    }
 }
 
 Browser.prototype.notifyLocation = function() {
@@ -1951,6 +1907,13 @@ Browser.prototype.addTierListener = function(handler) {
     this.tierListeners.push(handler);
 }
 
+Browser.prototype.removeTierListener = function(handler) {
+    var idx = arrayIndexOf(this.tierListeners, handler);
+    if (idx >= 0) {
+        this.tierListeners.splice(idx, 1);
+    }
+}
+
 Browser.prototype.notifyTier = function() {
     for (var tli = 0; tli < this.tierListeners.length; ++tli) {
         try {
@@ -1963,6 +1926,13 @@ Browser.prototype.notifyTier = function() {
 
 Browser.prototype.addRegionSelectListener = function(handler) {
     this.regionSelectListeners.push(handler);
+}
+
+Browser.prototype.removeRegionSelectListener = function(handler) {
+    var idx = arrayIndexOf(this.regionSelectListeners, handler);
+    if (idx >= 0) {
+        this.regionSelectListeners.splice(idx, 1);
+    }
 }
 
 Browser.prototype.notifyRegionSelect = function(chr, min, max) {
@@ -2091,8 +2061,15 @@ Browser.prototype.markSelectedTiers = function() {
     }
 }
 
-Browser.prototype.addTierSelectionListener = function(f) {
-    this.tierSelectionListeners.push(f);
+Browser.prototype.addTierSelectionListener = function(handler) {
+    this.tierSelectionListeners.push(handler);
+}
+
+Browser.prototype.removeTierSelectionListener = function(handler) {
+    var idx = arrayIndexOf(this.tierSelectionListeners, handler);
+    if (idx >= 0) {
+        this.tierSelectionListeners.splice(idx, 1);
+    }
 }
 
 Browser.prototype.notifyTierSelection = function() {
@@ -2107,6 +2084,13 @@ Browser.prototype.notifyTierSelection = function() {
 
 Browser.prototype.addTierSelectionWrapListener = function(f) {
     this.tierSelectionWrapListeners.push(f);
+}
+
+Browser.prototype.removeTierSelectionWrapListener = function(handler) {
+    var idx = arrayIndexOf(this.tierSelectionWrapListeners, handler);
+    if (idx >= 0) {
+        this.tierSelectionWrapListeners.splice(idx, 1);
+    }
 }
 
 Browser.prototype.notifyTierSelectionWrap = function(i) {
@@ -2380,6 +2364,40 @@ Browser.prototype.makeLoader = function(size) {
     }
 }
 
+Browser.prototype.canFetchPlainHTTP = function() {
+    if (!this._plainHTTPPromise) {
+        var worker = this.getWorker();
+        if (worker) {
+            this._plainHTTPPromise = new Promise(function(resolve, reject) {
+                worker.postCommand(
+                    {command: 'textxhr',
+                     uri: 'http://www.biodalliance.org/http-canary.txt'},
+                    function(result, err) {
+                        if (result) {
+                            resolve(true);
+                        } else {
+                            resolve(false);
+                        }
+                    });
+                });
+        } else {
+           this._plainHTTPPromise = new Promise(function(resolve, reject) {
+                textXHR(
+                    'http://www.biodalliance.org/http-canary.txt', 
+                    function(result, err) {
+                        if (result) {
+                            resolve(true);
+                        } else {
+                            resolve(false);
+                        }
+                    }
+                );
+            });
+        }
+    }
+    return this._plainHTTPPromise;
+}
+
 Browser.prototype.getWorker = function() {
     if (!this.useFetchWorkers || !this.fetchWorkers || this.fetchWorkers.length==0)
         return null;
@@ -2445,9 +2463,7 @@ FetchWorker.prototype.postCommand = function(cmd, callback, transfer) {
 
 if (typeof(module) !== 'undefined') {
     module.exports = {
-        Browser: Browser,
-        sourcesAreEqual: sourcesAreEqual,
-        sourceDataURI: sourceDataURI
+        Browser: Browser
     };
 
     // Required because they add stuff to Browser.prototype
