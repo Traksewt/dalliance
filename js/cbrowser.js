@@ -1216,7 +1216,7 @@ Browser.prototype.withPreservedSelection = function(f) {
 
 Browser.prototype.refreshTier = function(tier) {
     if (this.knownSpace) {
-        this.knownSpace.invalidate(tier);
+        this.knownSpace.invalidate(tier, defaultTierRenderer);
     }
 }
 
@@ -1323,6 +1323,19 @@ Browser.prototype.arrangeTiers = function() {
 }
 
 Browser.prototype.refresh = function() {
+
+    this.retrieveTierData(defaultTierRenderer);
+    this.drawOverlays();
+    this.positionRuler();
+
+};
+
+var defaultTierRenderer = function(status, tier) {
+    tier.draw();
+    tier.updateStatus(status);
+}
+
+Browser.prototype.retrieveTierData = function(tierRendererCallback) {
     this.notifyLocation();
     var width = (this.viewEnd - this.viewStart) + 1;
     var minExtraW = (100.0/this.scale)|0;
@@ -1363,9 +1376,7 @@ Browser.prototype.refresh = function() {
         this.drawnEnd = outerDrawnEnd;
     }
     
-    this.knownSpace.viewFeatures(this.chr, this.drawnStart, this.drawnEnd, scaledQuantRes);
-    this.drawOverlays();
-    this.positionRuler();
+    this.knownSpace.retrieveFeatures(this.chr, this.drawnStart, this.drawnEnd, scaledQuantRes, tierRendererCallback);
 }
 
 function setSources(msh, availableSources, maybeMapping) {
